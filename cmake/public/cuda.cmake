@@ -424,7 +424,10 @@ if (MSVC)
   else()
     list(APPEND CUDA_NVCC_FLAGS "-Xcompiler" "-MD$<$<CONFIG:Debug>:d>")
   endif()
-elseif (CUDA_DEVICE_DEBUG)
+  list(APPEND CUDA_NVCC_FLAGS "-g" "-G")  # -G enables device code debugging symbols
+endif()
+
+if (CUDA_DEVICE_DEBUG)
   list(APPEND CUDA_NVCC_FLAGS "-g" "-G")  # -G enables device code debugging symbols
 endif()
 
