@@ -57,16 +57,39 @@ struct CellParams {
   const Tensor& b_hh; /* optional */
 
   Tensor matmul_ih(Tensor input) const {
-    return at::matmul(input, w_ih.t());
+    if (w_ih.dim() == 3) {
+	auto out = at::bmm(input.view({input.size(0), 1, input.size(1)}), w_ih.transpose(1, 2));
+    	TORCH_CHECK(out.size(1)==1, "output dimension is temporarily expanded");
+    	return out.view({out.size(0), out.size(2)});
+    } else {
+    	return at::matmul(input, w_ih.t());
+    }
   }
+
   Tensor matmul_hh(Tensor h) const {
-    return at::matmul(h, w_hh.t());
+    if (w_hh.dim() == 3) {
+        auto out = at::bmm(h.view({h.size(0), 1, h.size(1)}), w_hh.transpose(1, 2));
+    	TORCH_CHECK(out.size(1)==1, "output dimension is temporarily expanded");
+    	return out.view({out.size(0), out.size(2)});    
+    } else {
+    	return at::matmul(h, w_hh.t());
+    }
   }
+
   Tensor linear_ih(Tensor input) const {
-    return at::linear(input, w_ih, b_ih);
+    if (w_ih.dim() == 3) {
+	TORCH_CHECK(false, "linear is not implemented yet");
+    } else {
+    	return at::linear(input, w_ih, b_ih);
+    }
   }
+
   Tensor linear_hh(Tensor h) const {
-    return at::linear(h, w_hh, b_hh);
+    if (w_hh.dim() == 3) {
+    	TORCH_CHECK(false, "linear is not implemented yet");        
+    } else {
+    	return at::linear(h, w_hh, b_hh);
+    }
   }
 };
 
@@ -974,7 +997,9 @@ std::tuple<Tensor, Tensor, Tensor> lstm(
       TensorList _params, bool has_biases,
       int64_t num_layers, double dropout_p, bool train, bool bidirectional, bool batch_first) {
   TORCH_CHECK(hx.size() == 2, "lstm expects two hidden states");
+  auto bmm_lstm = _params[0].dim() == 3;
   if (at::cudnn_is_acceptable(_input)) {
+    TORCH_CHECK(!bmm_lstm, "cudnn is not accceptable for bmm_lstm")
     Tensor output, hy, cy;
     lstm_cudnn_stub(_input.device().type(), output, hy, cy, _input, hx, _params, has_biases,
             num_layers, dropout_p, train, bidirectional, batch_first);
@@ -982,6 +1007,7 @@ std::tuple<Tensor, Tensor, Tensor> lstm(
   }
 
   if (use_miopen(_input, dropout_p)) {
+    TORCH_CHECK(!bmm_lstm, "miopen is not accceptable for bmm_lstm")
     Tensor output, hy, cy;
     lstm_miopen_stub(_input.device().type(), output, hy, cy, _input, hx, _params, has_biases,
               num_layers, dropout_p, train, bidirectional, batch_first);

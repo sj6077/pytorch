@@ -25,8 +25,12 @@ void checkSizes(CheckedFrom c,
   int64_t gates_size = input_gates->size(1);
 
   if (input_bias->defined()) {
-    checkDim(c, input_bias, 1);
-    checkNumel(c, input_bias, gates_size);
+    if (input_bias->dim() == 1) {
+      checkNumel(c, input_bias, gates_size);
+    } else {
+      checkDim(c, input_bias, 2);
+      checkSameSize(c, input_gates, input_bias);
+    }
     checkSameSize(c, input_bias, hidden_bias);
   }
 
@@ -94,7 +98,8 @@ __global__ void lstm_cell_forward(
             TensorInfo<scalar_t, index_type> _cy,
             TensorInfo<scalar_t, index_type> workspace,
             index_type hsz,
-            index_type totalElements) {
+            index_type totalElements,
+	    bool is_2d_bias) {
     bool has_bias = bias1.data != nullptr;
     for (index_type linearIndex = blockIdx.x * blockDim.x + threadIdx.x;
        linearIndex < totalElements;
@@ -125,15 +130,27 @@ __global__ void lstm_cell_forward(
       scalar_t b2i, b2f, b2c, b2o;
 
       if (has_bias) {
-        b1i = DEVICE_BIAS_GET(bias1, linearIndex % hsz + 0 * hsz);
-        b1f = DEVICE_BIAS_GET(bias1, linearIndex % hsz + 1 * hsz);
-        b1c = DEVICE_BIAS_GET(bias1, linearIndex % hsz + 2 * hsz);
-        b1o = DEVICE_BIAS_GET(bias1, linearIndex % hsz + 3 * hsz);
+	if (is_2d_bias) {
+	  b1i = DEVICE_LINEAR_GET(bias1, offset + 0 * hsz);
+          b1f = DEVICE_LINEAR_GET(bias1, offset + 1 * hsz);
+          b1c = DEVICE_LINEAR_GET(bias1, offset + 2 * hsz);
+          b1o = DEVICE_LINEAR_GET(bias1, offset + 3 * hsz);
 
-        b2i = DEVICE_BIAS_GET(bias2, linearIndex % hsz + 0 * hsz);
-        b2f = DEVICE_BIAS_GET(bias2, linearIndex % hsz + 1 * hsz);
-        b2c = DEVICE_BIAS_GET(bias2, linearIndex % hsz + 2 * hsz);
-        b2o = DEVICE_BIAS_GET(bias2, linearIndex % hsz + 3 * hsz);
+          b2i = DEVICE_LINEAR_GET(bias2, offset + 0 * hsz);
+          b2f = DEVICE_LINEAR_GET(bias2, offset + 1 * hsz);
+          b2c = DEVICE_LINEAR_GET(bias2, offset + 2 * hsz);
+          b2o = DEVICE_LINEAR_GET(bias2, offset + 3 * hsz);
+	} else {
+	  b1i = DEVICE_BIAS_GET(bias1, linearIndex % hsz + 0 * hsz);
+          b1f = DEVICE_BIAS_GET(bias1, linearIndex % hsz + 1 * hsz);
+          b1c = DEVICE_BIAS_GET(bias1, linearIndex % hsz + 2 * hsz);
+          b1o = DEVICE_BIAS_GET(bias1, linearIndex % hsz + 3 * hsz);
+
+          b2i = DEVICE_BIAS_GET(bias2, linearIndex % hsz + 0 * hsz);
+          b2f = DEVICE_BIAS_GET(bias2, linearIndex % hsz + 1 * hsz);
+          b2c = DEVICE_BIAS_GET(bias2, linearIndex % hsz + 2 * hsz);
+          b2o = DEVICE_BIAS_GET(bias2, linearIndex % hsz + 3 * hsz);
+	}
       } else {
 #ifndef THC_REAL_IS_HALF
         b1i = 0.0; b1f = 0.0; b1c = 0.0; b1o = 0.0;
@@ -373,17 +390,18 @@ void lstm_forward_impl(const Tensor& input_gates, const Tensor& hidden_gates,
   auto cyI = getTensorInfo<scalar_t, index_type>(cy);
   auto workspaceI = getTensorInfo<scalar_t, index_type>(workspace);
   index_type hidden_size = cxI.sizes[cxI.dims-1];
-
+  bool is_2d_bias = input_bias.defined() && input_biasI.dims > 1;
+ 
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
   if (allContiguous({input_gates, hidden_gates, input_bias, hidden_bias, cx, hy, cy, workspace})) {
     collapseDims(input_gatesI, hidden_gatesI, input_biasI, hidden_biasI, cxI, hyI, cyI, workspaceI);
     kernel::lstm_cell_forward<scalar_t, accscalar_t, index_type, 1>
       <<<grid, block, 0, stream>>>
-        (input_gatesI, hidden_gatesI, input_biasI, hidden_biasI, cxI, hyI, cyI, workspaceI, hidden_size, numel);
+        (input_gatesI, hidden_gatesI, input_biasI, hidden_biasI, cxI, hyI, cyI, workspaceI, hidden_size, numel, is_2d_bias);
   } else {
     kernel::lstm_cell_forward<scalar_t, accscalar_t, index_type, 2>
       <<<grid, block, 0, stream>>>
-        (input_gatesI, hidden_gatesI, input_biasI, hidden_biasI, cxI, hyI, cyI, workspaceI, hidden_size, numel);
+        (input_gatesI, hidden_gatesI, input_biasI, hidden_biasI, cxI, hyI, cyI, workspaceI, hidden_size, numel, is_2d_bias);
   }
 }
 

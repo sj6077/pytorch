@@ -26,7 +26,7 @@ class RNNBase(Module):
 
     def __init__(self, mode, input_size, hidden_size,
                  num_layers=1, bias=True, batch_first=False,
-                 dropout=0., bidirectional=False):
+                 dropout=0., bidirectional=False, batch_size=None):
         super(RNNBase, self).__init__()
         self.mode = mode
         self.input_size = input_size
@@ -37,6 +37,7 @@ class RNNBase(Module):
         self.dropout = float(dropout)
         self.bidirectional = bidirectional
         num_directions = 2 if bidirectional else 1
+        self.batch_size = batch_size
 
         if not isinstance(dropout, numbers.Number) or not 0 <= dropout <= 1 or \
                 isinstance(dropout, bool):
@@ -65,13 +66,20 @@ class RNNBase(Module):
         for layer in range(num_layers):
             for direction in range(num_directions):
                 layer_input_size = input_size if layer == 0 else hidden_size * num_directions
-
-                w_ih = Parameter(torch.Tensor(gate_size, layer_input_size))
-                w_hh = Parameter(torch.Tensor(gate_size, hidden_size))
-                b_ih = Parameter(torch.Tensor(gate_size))
-                # Second bias vector included for CuDNN compatibility. Only one
-                # bias vector is needed in standard definition.
-                b_hh = Parameter(torch.Tensor(gate_size))
+                if self.batch_size:
+                    w_ih = Parameter(torch.Tensor(batch_size, gate_size, layer_input_size))
+                    w_hh = Parameter(torch.Tensor(batch_size, gate_size, hidden_size))
+                    b_ih = Parameter(torch.Tensor(batch_size, gate_size))
+                    # Second bias vector included for CuDNN compatibility. Only one
+                    # bias vector is needed in standard definition.
+                    b_hh = Parameter(torch.Tensor(batch_size, gate_size))
+                else:
+                    w_ih = Parameter(torch.Tensor(gate_size, layer_input_size))
+                    w_hh = Parameter(torch.Tensor(gate_size, hidden_size))
+                    b_ih = Parameter(torch.Tensor(gate_size))
+                    # Second bias vector included for CuDNN compatibility. Only one
+                    # bias vector is needed in standard definition.
+                    b_hh = Parameter(torch.Tensor(gate_size))
                 layer_params = (w_ih, w_hh, b_ih, b_hh)
 
                 suffix = '_reverse' if direction == 1 else ''
@@ -147,6 +155,7 @@ class RNNBase(Module):
             init.uniform_(weight, -stdv, stdv)
 
     def check_input(self, input, batch_sizes):
+        assert self.batch_size is None or batch_sizes is None 
         # type: (Tensor, Optional[Tensor]) -> None
         expected_input_dim = 2 if batch_sizes is not None else 3
         if input.dim() != expected_input_dim:
@@ -165,6 +174,7 @@ class RNNBase(Module):
             mini_batch = int(mini_batch)
         else:
             mini_batch = input.size(0) if self.batch_first else input.size(1)
+        assert self.batch_size is None or mini_batch == self.batch_size
         num_directions = 2 if self.bidirectional else 1
         expected_hidden_size = (self.num_layers * num_directions,
                                 mini_batch, self.hidden_size)
@@ -568,7 +578,6 @@ class LSTM(RNNBase):
             return output_packed, self.permute_hidden(hidden, unsorted_indices)
         else:
             return output, self.permute_hidden(hidden, unsorted_indices)
-
 
 class GRU(RNNBase):
     r"""Applies a multi-layer gated recurrent unit (GRU) RNN to an input sequence.
