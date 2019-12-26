@@ -111,7 +111,7 @@ class RNNBase(Module):
         Otherwise, it's a no-op.
         """
         any_param = next(self.parameters()).data
-        if not any_param.is_cuda or not torch.backends.cudnn.is_acceptable(any_param):
+        if not any_param.is_cuda or not torch.backends.cudnn.is_acceptable(any_param) or self.batch_size is not None:
             return
 
         # If any parameters alias, we fall back to the slower, copying code path. This is

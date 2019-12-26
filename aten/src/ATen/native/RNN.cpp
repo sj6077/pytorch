@@ -998,7 +998,7 @@ std::tuple<Tensor, Tensor, Tensor> lstm(
       int64_t num_layers, double dropout_p, bool train, bool bidirectional, bool batch_first) {
   TORCH_CHECK(hx.size() == 2, "lstm expects two hidden states");
   auto bmm_lstm = _params[0].dim() == 3;
-  if (at::cudnn_is_acceptable(_input)) {
+  if (!bmm_lstm && at::cudnn_is_acceptable(_input)) {
     TORCH_CHECK(!bmm_lstm, "cudnn is not accceptable for bmm_lstm")
     Tensor output, hy, cy;
     lstm_cudnn_stub(_input.device().type(), output, hy, cy, _input, hx, _params, has_biases,
@@ -1006,7 +1006,7 @@ std::tuple<Tensor, Tensor, Tensor> lstm(
     return std::make_tuple(std::move(output), std::move(hy), std::move(cy));
   }
 
-  if (use_miopen(_input, dropout_p)) {
+  if (!bmm_lstm && use_miopen(_input, dropout_p)) {
     TORCH_CHECK(!bmm_lstm, "miopen is not accceptable for bmm_lstm")
     Tensor output, hy, cy;
     lstm_miopen_stub(_input.device().type(), output, hy, cy, _input, hx, _params, has_biases,
