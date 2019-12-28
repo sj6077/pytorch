@@ -58,9 +58,8 @@ struct CellParams {
 
   Tensor matmul_ih(Tensor input) const {
     if (w_ih.dim() == 3) {
-	auto out = at::bmm(input.view({input.size(0), 1, input.size(1)}), w_ih.transpose(1, 2));
-    	TORCH_CHECK(out.size(1)==1, "output dimension is temporarily expanded");
-    	return out.view({out.size(0), out.size(2)});
+        auto out = at::bmm(input.view({input.size(0), 1, input.size(1)}).contiguous(), w_ih.transpose(1, 2));
+    	return out.view({out.size(0) * out.size(1), out.size(2)});
     } else {
     	return at::matmul(input, w_ih.t());
     }
@@ -68,9 +67,8 @@ struct CellParams {
 
   Tensor matmul_hh(Tensor h) const {
     if (w_hh.dim() == 3) {
-        auto out = at::bmm(h.view({h.size(0), 1, h.size(1)}), w_hh.transpose(1, 2));
-    	TORCH_CHECK(out.size(1)==1, "output dimension is temporarily expanded");
-    	return out.view({out.size(0), out.size(2)});    
+        auto out = at::bmm(h.view({h.size(0), 1, h.size(1)}).contiguous(), w_hh.transpose(1, 2));
+    	return out.view({out.size(0) * out.size(1), out.size(2)});
     } else {
     	return at::matmul(h, w_hh.t());
     }
@@ -426,6 +424,7 @@ struct LSTMCell : Cell<std::tuple<Tensor, Tensor>, cell_params> {
       TORCH_CHECK(!pre_compute_input);
       auto igates = params.matmul_ih(input);
       auto hgates = params.matmul_hh(hx);
+
       auto result = at::_thnn_fused_lstm_cell(
           igates, hgates, cx, params.b_ih, params.b_hh);
       // Slice off the workspace argument (it's needed only for AD).

@@ -67,12 +67,12 @@ class RNNBase(Module):
             for direction in range(num_directions):
                 layer_input_size = input_size if layer == 0 else hidden_size * num_directions
                 if self.batch_size:
-                    w_ih = Parameter(torch.Tensor(batch_size, gate_size, layer_input_size))
-                    w_hh = Parameter(torch.Tensor(batch_size, gate_size, hidden_size))
-                    b_ih = Parameter(torch.Tensor(batch_size, gate_size))
+                    w_ih = Parameter(torch.Tensor(self.batch_size, gate_size, layer_input_size))
+                    w_hh = Parameter(torch.Tensor(self.batch_size, gate_size, hidden_size))
+                    b_ih = Parameter(torch.Tensor(self.batch_size, gate_size))
                     # Second bias vector included for CuDNN compatibility. Only one
                     # bias vector is needed in standard definition.
-                    b_hh = Parameter(torch.Tensor(batch_size, gate_size))
+                    b_hh = Parameter(torch.Tensor(self.batch_size, gate_size))
                 else:
                     w_ih = Parameter(torch.Tensor(gate_size, layer_input_size))
                     w_hh = Parameter(torch.Tensor(gate_size, hidden_size))
@@ -155,7 +155,6 @@ class RNNBase(Module):
             init.uniform_(weight, -stdv, stdv)
 
     def check_input(self, input, batch_sizes):
-        assert self.batch_size is None or batch_sizes is None 
         # type: (Tensor, Optional[Tensor]) -> None
         expected_input_dim = 2 if batch_sizes is not None else 3
         if input.dim() != expected_input_dim:
@@ -174,7 +173,6 @@ class RNNBase(Module):
             mini_batch = int(mini_batch)
         else:
             mini_batch = input.size(0) if self.batch_first else input.size(1)
-        assert self.batch_size is None or mini_batch == self.batch_size
         num_directions = 2 if self.bidirectional else 1
         expected_hidden_size = (self.num_layers * num_directions,
                                 mini_batch, self.hidden_size)
